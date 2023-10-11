@@ -23,7 +23,7 @@ def get_word_count(text):
 def query_argsme(issue):
     if ' ' in issue:
         issue = issue.replace(' ', '%20')
-    url = 'https://www.args.me/api/v2/arguments?query={}&pageSize=100&format=json'.format(
+    url = 'https://www.args.me/api/v2/arguments?query={}&pageSize=300&format=json'.format(
         issue)
     response = requests.get(url)
     return response.json()
@@ -52,7 +52,7 @@ if __name__ == '__main__':
         count = 0
         for tq, ta, ts, tsn in zip(tmp_query, tmp_argument, tmp_stance, tmp_snippet):
             tmp_word_count = get_word_count(ta)
-            if tmp_word_count >= 100:
+            if tmp_word_count >= 100 and tmp_word_count <= 500:
                 count += 1
                 query.append(tq)
                 argument.append(ta)

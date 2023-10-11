@@ -30,7 +30,10 @@ GEN_ARGS = {
 PROMPT_PATTERN = '''Here is some text: {{{}}}. Here is a rewrite of the text that is more appropriate and makes only minimal changes: {{{}}}.'''
 
 INSTRUCT_PRE = '''Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n'''
-INSTRUCT_PATTERN = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_REWRITE = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_EXTRACT = '''### Instruction:\nExtract a two sentence coherent gist from the following argument on the topic of "{}".\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_REWRITE_EXTRACT = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument. Subsequently, extract a two sentence coherent gist from the rewritten argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_EXTRACT_REWRITE = '''### Instruction:\nExtract a two sentence coherent gist from the following argument on the topic of "{}". Subsequently, rewrite the gist to be more appropriate and make only minimal changes to the original gist.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
 
 FEW_SHOT_EXAMPLES_SUB = [
     (''''Towed three times and impounded for 30 days each time? Man, you're just not getting the message, are you? If you are in California, you bet the police can forfeit your vehicle and it doesn't take three times to make it a charm. Technically, your vehicle could be subject to forfeiture proceedings after your first suspended license beef. Someone like you is exactly the reason the legislature designed that law, because your privilege to drive has been taken away from you and yet you obviously continue to drive. People like you are involved in an exponentially higher than average number of traffic accidents so the legislature figured maybe people like you should have your vehicles forfeited to the state if you just didn't go along with the game plan. Voila - I give you California Vehicle Code section 14607.6...and a link to it below. It would also be worth your time to review 14607.4, whether or not you live in California. You really need to stop driving. Really.''',
@@ -209,20 +212,49 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
 
 def get_baseline_preds():
     args = parse_args()
-    ds_path = '../data/neutralized_sample_50.csv'
-    save_path = '../data/llama_neutralized_sample_50.csv'
-    df = pd.read_csv(ds_path)
-    df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
-    print(df['prompt'].tolist()[0])
-    model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
+    if args.dataset == 'argsme':
+        ds_path = '../data/argsme/inappropriate_arguments_sample_filtered.csv'
+        df = pd.read_csv(ds_path)
+        df['issue'] = df['query']
+    if args.dataset == 'appropriateness':
+        ds_path = '../data/inappropriate_arguments_sample_100.csv'
+        df = pd.read_csv(ds_path)
 
+    if args.task1 == 'rewrite':
+        INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE
+    elif args.task1 == 'extract':
+        INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT
+    elif args.task1 == 'rewrite_extract':
+        INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE_EXTRACT
+    elif args.task1 == 'extract_rewrite':
+        INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT_REWRITE
+    df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
+
+    model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
     samples = list(zip(df['prompt'], df['argument']))
+    save_path = '../data/llama_{}_{}.csv'.format(args.task1, args.dataset)
     model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
+
+    if args.task2 is not None:
+        df['argument'] = pd.read_csv(save_path, header=None)['1']
+        if args.task2 == 'rewrite':
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE
+        elif args.task2 == 'extract':
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT
+        df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
+
+        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
+        samples = list(zip(df['prompt'], df['argument']))
+        save_path = '../data/llama_{}_then_{}_{}.csv'.format(args.task1, args.task2,  args.dataset)
+        model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', type=str)
+    parser.add_argument('--task1', type=str)
+    parser.add_argument('--task2', type=str, default=None)
+    parser.add_argument('--dataset', type=str)
     return parser.parse_args()
 
 

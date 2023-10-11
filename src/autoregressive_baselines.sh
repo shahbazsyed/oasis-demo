@@ -1,17 +1,9 @@
-LM_MODEL_LIST=(
-    "huggyllama/llama-7b"
-)
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset argsme --task1 rewrite --task2 extract
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset argsme --task1 extract --task2 rewrite
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset argsme --task1 rewrite_extract
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset argsme --task1 extract_rewrite
 
-for model in "${LM_MODEL_LIST[@]}"
-do
-    python /bigwork/nhwpziet/oasis-demo/src/autoregressive_baselines.py --model_name $model --model_type lm --num_shots 0
-done
-
-InstructLM_MODEL_LIST=(
-    "/bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct"
-)
-
-for model in "${InstructLM_MODEL_LIST[@]}"
-do
-    python /bigwork/nhwpziet/oasis-demo/src/autoregressive_baselines.py --model_name $model --model_type instruct --num_shots 0
-done
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset appropriateness --task1 rewrite --task2 extract
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset appropriateness --task1 extract --task2 rewrite
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset appropriateness --task1 rewrite_extract
+python autoregressive_baselines.py --model_name /bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct --dataset appropriateness --task1 extract_rewrite
