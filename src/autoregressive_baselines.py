@@ -30,7 +30,7 @@ GEN_ARGS = {
 PROMPT_PATTERN = '''Here is some text: {{{}}}. Here is a rewrite of the text that is more appropriate and makes only minimal changes: {{{}}}.'''
 
 INSTRUCT_PRE = '''Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n'''
-INSTRUCT_PATTERN = '''### Instruction:\nRewrite the following argument to be more appropriate and make only minimal changes to the original argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
 
 FEW_SHOT_EXAMPLES_SUB = [
     (''''Towed three times and impounded for 30 days each time? Man, you're just not getting the message, are you? If you are in California, you bet the police can forfeit your vehicle and it doesn't take three times to make it a charm. Technically, your vehicle could be subject to forfeiture proceedings after your first suspended license beef. Someone like you is exactly the reason the legislature designed that law, because your privilege to drive has been taken away from you and yet you obviously continue to drive. People like you are involved in an exponentially higher than average number of traffic accidents so the legislature figured maybe people like you should have your vehicles forfeited to the state if you just didn't go along with the game plan. Voila - I give you California Vehicle Code section 14607.6...and a link to it below. It would also be worth your time to review 14607.4, whether or not you live in California. You really need to stop driving. Really.''',
@@ -210,9 +210,9 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
 def get_baseline_preds():
     args = parse_args()
     ds_path = '../data/neutralized_sample_50.csv'
-    save_path = '../data/llama_neutralized_sample_50_no_issue.csv'
+    save_path = '../data/llama_neutralized_sample_50.csv'
     df = pd.read_csv(ds_path)
-    df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[1]), axis=1)
+    df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
     print(df['prompt'].tolist()[0])
     model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
 
