@@ -1,4 +1,5 @@
 import requests
+import re
 import pandas as pd
 
 TOP_10_TOPICS = [
@@ -15,10 +16,14 @@ TOP_10_TOPICS = [
 ]
 
 
+def get_word_count(text):
+    return len(re.findall(r'\w+', text))
+
+
 def query_argsme(issue):
     if ' ' in issue:
         issue = issue.replace(' ', '%20')
-    url = 'https://www.args.me/api/v2/arguments?query={}&pageSize=50&format=json'.format(
+    url = 'https://www.args.me/api/v2/arguments?query={}&pageSize=100&format=json'.format(
         issue)
     response = requests.get(url)
     return response.json()
@@ -46,7 +51,8 @@ if __name__ == '__main__':
         tmp_query, tmp_argument, tmp_stance, tmp_snippet = filter_response(response)
         count = 0
         for tq, ta, ts, tsn in zip(tmp_query, tmp_argument, tmp_stance, tmp_snippet):
-            if len(ta.split(' ')) >= 100 and count < 20 and len(ta.split(' ')) < 600:
+            tmp_word_count = get_word_count(ta)
+            if tmp_word_count >= 100:
                 count += 1
                 query.append(tq)
                 argument.append(ta)
@@ -56,4 +62,5 @@ if __name__ == '__main__':
                        'argument': argument,
                        'stance': stance,
                        'snippet': snippet})
-    df.to_csv('../data/argsme/top20args.csv', index=False)
+    df['id'] = df.index
+    df.to_csv('../data/argsme/inappropriate_arguments_sample.csv', index=False)
