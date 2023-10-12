@@ -2,6 +2,7 @@ import pandas as pd
 import torch
 from peft import PeftModel, PeftConfig
 import os
+import spacy
 import re
 import argparse
 from tqdm import tqdm
@@ -31,9 +32,9 @@ PROMPT_PATTERN = '''Here is some text: {{{}}}. Here is a rewrite of the text tha
 
 INSTRUCT_PRE = '''Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n'''
 INSTRUCT_PATTERN_REWRITE = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
-INSTRUCT_PATTERN_EXTRACT = '''### Instruction:\nExtract a two sentence coherent gist from the following argument on the topic of "{}".\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
-INSTRUCT_PATTERN_REWRITE_EXTRACT = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument. Subsequently, extract a two sentence coherent gist from the rewritten argument.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
-INSTRUCT_PATTERN_EXTRACT_REWRITE = '''### Instruction:\nExtract a two sentence coherent gist from the following argument on the topic of "{}". Subsequently, rewrite the gist to be more appropriate and make only minimal changes to the original gist.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_EXTRACT = '''### Instruction:\nThe following is an argument on the topic of "{}". Extract a coherent gist from it that is exactly two sentences long.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_REWRITE_EXTRACT = '''### Instruction:\nRewrite the following argument on the topic of "{}" to be more appropriate and make only minimal changes to the original argument. Subsequently, extract a coherent gist from it that is exactly two sentences long.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
+INSTRUCT_PATTERN_EXTRACT_REWRITE = '''### Instruction:\nThe following is an argument on the topic of "{}". Extract a coherent gist from it that is exactly two sentences long. Subsequently, rewrite the gist to be more appropriate and make only minimal changes to the original gist.\n\n### Input:\n{}\n\n### Response:\n{}\n\n'''
 
 FEW_SHOT_EXAMPLES_SUB = [
     (''''Towed three times and impounded for 30 days each time? Man, you're just not getting the message, are you? If you are in California, you bet the police can forfeit your vehicle and it doesn't take three times to make it a charm. Technically, your vehicle could be subject to forfeiture proceedings after your first suspended license beef. Someone like you is exactly the reason the legislature designed that law, because your privilege to drive has been taken away from you and yet you obviously continue to drive. People like you are involved in an exponentially higher than average number of traffic accidents so the legislature figured maybe people like you should have your vehicles forfeited to the state if you just didn't go along with the game plan. Voila - I give you California Vehicle Code section 14607.6...and a link to it below. It would also be worth your time to review 14607.4, whether or not you live in California. You really need to stop driving. Really.''',
@@ -79,6 +80,8 @@ FEW_SHOT_EXAMPLES = [
      '''I believe porn is wrong if not consumed in moderation, as many porn addicts tend to have intimacy issues in their relationships and are prone to mistreat and view women in a negative manner. In addition, people who are addicted to porn have a screwed up view of sex and expect all women to look and act like porn stars, when in reality that is not the case.I believe porn is wrong if not consumed in moderation, as many porn addicts tend to have intimacy issues in their relationships and are prone to mistreat and view women in a negative manner. In addition, people who are addicted to porn have a screwed up view of sex and expect all women to look and act like porn stars, when in reality that is not the case.'''),
     ('''THE SCHOOL UNIFORM IS A VERY GOOOOOOOOOD IDEA , WHY ?? becouse the school uniform makes pupils concentrated on their education than on their clothes and I believe that school uniform instills discipline among pupils it makes pupils with diferent material statuses more equal :)''', '''School uniforms are a good idea because they make students focus more on their education than on their clothes, which I think leads to more discipline and makes students of different material status more equal.''')
 ]
+
+
 
 # check for length of at least 200 words
 def get_word_count(text):
@@ -163,30 +166,42 @@ class AppropriatenessPredictorFromLM(AutoRegressivePredictor):
 
 
 class AppropriatenessPredictorFromInstructLM(AutoRegressivePredictor):
-    def __init__(self, model_name, gen_args):
+    def __init__(self, model_name, gen_args, task):
         super().__init__(model_name, gen_args)
+        self.task = task
+
+        if 'extract' in task:
+            self.nlp = spacy.load("en_core_web_sm")
+            self.nlp.add_pipe("sentencizer")
 
     def predict_sample(self, sample):
         with torch.no_grad():
             prompt, post_text = sample
             prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to("cuda")
-            #i = len(FEW_SHOT_EXAMPLES_SUB) - 1
-            #while len(prompt_input_ids[0]) + int(len(post_text_input_ids[0]) * 2) > 2048:
-            #    print(prompt)
-            #    prompt = prompt[:-len(INSTRUCT_PATTERN[:-4].format(post_text))]
-            #    prompt = prompt[:-len(INSTRUCT_PATTERN.format(FEW_SHOT_EXAMPLES_SUB[i][0], FEW_SHOT_EXAMPLES_SUB[i][1]))]
-            #    prompt = prompt + INSTRUCT_PATTERN[:-4].format(post_text)
-            #    prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to("cuda")
-            #    i -= 1
-            self.gen_args["max_new_tokens"] = 2048-len(prompt_input_ids[0])
-            #self.gen_args["min_new_tokens"] = min([2048-len(prompt_input_ids[0]), int(len(post_text_input_ids[0]) * 0.5)])
+
+            if 'extract' in self.task:
+                # split post_text into sentences
+                post_text_sents = [sent.text for sent in self.nlp(post_text).sents]
+                # get number of tokens in each sentences
+                post_text_sents_num_tokens = [len(self.tokenizer(sent, return_tensors="pt").input_ids[0]) for sent in post_text_sents]
+                # sum up the number  of tokens in the two longest sentences
+                post_text_sents_num_tokens.sort(reverse=True)
+                post_text_sents_num_tokens = post_text_sents_num_tokens[:2]
+                post_text_sents_num_tokens_sum = sum(post_text_sents_num_tokens)
+                self.gen_args["max_new_tokens"] = post_text_sents_num_tokens_sum
+            else:
+                self.gen_args["max_new_tokens"] = 2048-len(prompt_input_ids[0])
             outputs = self.model.generate(
                 prompt_input_ids,
                 **self.gen_args,
             )
             decoded_outputs = []
             for output in outputs:
-                decoded_outputs.append(self.tokenizer.decode(output[len(prompt_input_ids[0]):], skip_special_tokens = True).strip())
+                tmp_out = self.tokenizer.decode(output[len(prompt_input_ids[0]):], skip_special_tokens = True).strip()
+                if 'extract' in self.task:
+                    tmp_out = ' '.join([sent.text for sent in self.nlp(tmp_out).sents][:2])
+                decoded_outputs.append(tmp_out)
+
             return decoded_outputs
 
 
@@ -220,39 +235,46 @@ def get_baseline_preds():
         ds_path = '../data/inappropriate_arguments_sample_100.csv'
         df = pd.read_csv(ds_path)
 
-    if args.task1 == 'rewrite':
-        INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE
-    elif args.task1 == 'extract':
-        INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT
-    elif args.task1 == 'rewrite_extract':
-        INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE_EXTRACT
-    elif args.task1 == 'extract_rewrite':
-        INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT_REWRITE
-    df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
-
-    model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
-    samples = list(zip(df['prompt'], df['argument']))
-    save_path = '../data/llama_{}_{}.csv'.format(args.task1, args.dataset)
-    model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
-
-    if args.task2 is not None:
-        df['argument'] = pd.read_csv(save_path, header=None)['1']
-        if args.task2 == 'rewrite':
+    if args.task1 is not None:
+        if args.task1 == 'rewrite':
             INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE
-        elif args.task2 == 'extract':
+        elif args.task1 == 'extract':
             INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT
+        elif args.task1 == 'rewrite_extract':
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE_EXTRACT
+        elif args.task1 == 'extract_rewrite':
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT_REWRITE
         df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
 
-        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS)
+        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task1)
         samples = list(zip(df['prompt'], df['argument']))
-        save_path = '../data/llama_{}_then_{}_{}.csv'.format(args.task1, args.task2,  args.dataset)
+        save_path = '../data/llama_{}_{}.csv'.format(args.task1, args.dataset)
+        model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
+
+    if args.task2 is not None:
+        if args.task2 == 'rewrite':
+            prev_save_path = '../data/llama_{}_{}.csv'.format('extract', args.dataset)
+            save_path = '../data/llama_{}_then_{}_{}.csv'.format('extract', args.task2,  args.dataset)
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_REWRITE
+        elif args.task2 == 'extract':
+            prev_save_path = '../data/llama_{}_{}.csv'.format('rewrite', args.dataset)
+            save_path = '../data/llama_{}_then_{}_{}.csv'.format('rewrite', args.task2,  args.dataset)
+            INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT
+        print(prev_save_path)
+        pred_df = pd.read_csv(prev_save_path, header=None, sep='\t', names=['0', '1'])
+        print(pred_df.head())
+        df['argument'] = pred_df['1']
+        df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
+
+        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task2)
+        samples = list(zip(df['prompt'], df['argument']))
         model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', type=str)
-    parser.add_argument('--task1', type=str)
+    parser.add_argument('--task1', type=str, default=None)
     parser.add_argument('--task2', type=str, default=None)
     parser.add_argument('--dataset', type=str)
     return parser.parse_args()
