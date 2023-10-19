@@ -98,7 +98,7 @@ class AutoRegressivePredictor:
             self.model = AutoModelForCausalLM.from_pretrained(model_name).to("cuda")
         self.model.eval()
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained('/bigwork/nhwpziet/appropriateness-style-transfer/data/models/instruction-finetuning/llama-7b-instruct')
 
         self.gen_args = gen_args
         self.num_written = 0
@@ -206,33 +206,53 @@ class AppropriatenessPredictorFromInstructLM(AutoRegressivePredictor):
 
 
 class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
-    def __init__(self, model_name, gen_args):
+    def __init__(self, model_name, gen_args, task):
         super().__init__(model_name, gen_args, peft_model_name=model_name)
+        self.task = task
+
+        if 'extract' in task:
+            self.nlp = spacy.load("en_core_web_sm")
+            self.nlp.add_pipe("sentencizer")
 
     def predict_sample(self, sample):
         with torch.no_grad():
             prompt, post_text = sample
             prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to("cuda")
-            self.gen_args["max_new_tokens"] = 512
-            self.gen_args["min_new_tokens"] = 10
+
+            if 'extract' in self.task:
+                # split post_text into sentences
+                post_text_sents = [sent.text for sent in self.nlp(post_text).sents]
+                # get number of tokens in each sentences
+                post_text_sents_num_tokens = [len(self.tokenizer(sent, return_tensors="pt").input_ids[0]) for sent in post_text_sents]
+                # sum up the number  of tokens in the two longest sentences
+                post_text_sents_num_tokens.sort(reverse=True)
+                post_text_sents_num_tokens = post_text_sents_num_tokens[:2]
+                post_text_sents_num_tokens_sum = sum(post_text_sents_num_tokens)
+                self.gen_args["max_new_tokens"] = post_text_sents_num_tokens_sum
+            else:
+                self.gen_args["max_new_tokens"] = 2048-len(prompt_input_ids[0])
             outputs = self.model.generate(
                 input_ids=prompt_input_ids,
                 **self.gen_args,
             )
             decoded_outputs = []
             for output in outputs:
-                decoded_outputs.append(self.tokenizer.decode(output[len(prompt_input_ids[0]):], skip_special_tokens = True).strip())
+                tmp_out = self.tokenizer.decode(output[len(prompt_input_ids[0]):], skip_special_tokens = True).strip()
+                if 'extract' in self.task:
+                    tmp_out = ' '.join([sent.text for sent in self.nlp(tmp_out).sents][:2])
+                decoded_outputs.append(tmp_out)
+
             return decoded_outputs
 
 
 def get_baseline_preds():
     args = parse_args()
     if args.dataset == 'argsme':
-        ds_path = '../data/argsme/inappropriate_arguments_sample_filtered.csv'
+        ds_path = '../data/inappropriate_arguments_sample_100_argsme.csv'
         df = pd.read_csv(ds_path)
         df['issue'] = df['query']
     if args.dataset == 'appropriateness':
-        ds_path = '../data/inappropriate_arguments_sample_100.csv'
+        ds_path = '../data/inappropriate_arguments_sample_100_appropriateness.csv'
         df = pd.read_csv(ds_path)
 
     if args.task1 is not None:
@@ -246,9 +266,13 @@ def get_baseline_preds():
             INSTRUCT_PATTERN = INSTRUCT_PATTERN_EXTRACT_REWRITE
         df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
 
-        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task1)
+        if 'ppo' in  args.model_name:
+            model = AppropriatenessPredictorFromPeftInstructLM(args.model_name, GEN_ARGS, args.task1)
+            save_path = '../data/llama_ppo_{}_{}_{}.csv'.format(args.task1, args.dataset, args.model_name.split('/')[-2])
+        else:
+            model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task1)
+            save_path = '../data/llama_{}_{}.csv'.format(args.task1, args.dataset)
         samples = list(zip(df['prompt'], df['argument']))
-        save_path = '../data/llama_{}_{}.csv'.format(args.task1, args.dataset)
         model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
 
     if args.task2 is not None:
@@ -266,7 +290,10 @@ def get_baseline_preds():
         df['argument'] = pred_df['1']
         df['prompt'] = df[['issue', 'argument']].apply(lambda x: INSTRUCT_PRE + INSTRUCT_PATTERN[:-4].format(x[0][:-1], x[1]), axis=1)
 
-        model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task2)
+        if 'ppo' in  args.model_name:
+            model = AppropriatenessPredictorFromPeftInstructLM(args.model_name, GEN_ARGS, args.task2)
+        else:
+            model = AppropriatenessPredictorFromInstructLM(args.model_name, GEN_ARGS, args.task2)
         samples = list(zip(df['prompt'], df['argument']))
         model.predict_ds(samples, to_file=True, file_path=save_path, overwrite=True)
 
