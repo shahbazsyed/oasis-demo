@@ -256,6 +256,10 @@ def get_baseline_preds():
         df = pd.read_csv(ds_path)
         df['issue'] = df['query']
         df['argument'] = df['bart_gist']
+    if args.dataset == 'appropriateness_bart':
+        ds_path = '../data/results-by-corpus/appropriateness/summarization/bart.csv'
+        df = pd.read_csv(ds_path)
+        df['argument'] = df['supervised_summary']
     if args.dataset == 'appropriateness':
         ds_path = '../data/inappropriate_arguments_sample_100_appropriateness.csv'
         df = pd.read_csv(ds_path)
