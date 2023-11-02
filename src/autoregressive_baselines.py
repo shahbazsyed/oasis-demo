@@ -218,6 +218,7 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
         with torch.no_grad():
             prompt, post_text = sample
             prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to("cuda")
+            post_text_input_ids = self.tokenizer(post_text, return_tensors="pt").input_ids.to("cuda")
 
             if 'extract' in self.task:
                 # split post_text into sentences
@@ -230,7 +231,8 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
                 post_text_sents_num_tokens_sum = sum(post_text_sents_num_tokens)
                 self.gen_args["max_new_tokens"] = post_text_sents_num_tokens_sum
             else:
-                self.gen_args["max_new_tokens"] = 2048-len(prompt_input_ids[0])
+                self.gen_args["max_new_tokens"] = int(len(post_text_input_ids[0]) * 2)
+                self.gen_args["min_new_tokens"] = int(len(post_text_input_ids[0]) * 0.5)
             outputs = self.model.generate(
                 input_ids=prompt_input_ids,
                 **self.gen_args,
