@@ -231,8 +231,9 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
                 post_text_sents_num_tokens_sum = sum(post_text_sents_num_tokens)
                 self.gen_args["max_new_tokens"] = post_text_sents_num_tokens_sum
             else:
-                self.gen_args["max_new_tokens"] = int(len(post_text_input_ids[0]) * 2)
-                self.gen_args["min_new_tokens"] = int(len(post_text_input_ids[0]) * 0.5)
+                self.gen_args["max_new_tokens"] = int(len(post_text_input_ids[0]) * 1.25)
+                self.gen_args["min_new_tokens"] = int(len(post_text_input_ids[0]) * 0.25)
+                print(self.gen_args["max_new_tokens"], self.gen_args["min_new_tokens"])
             outputs = self.model.generate(
                 input_ids=prompt_input_ids,
                 **self.gen_args,
@@ -242,6 +243,9 @@ class AppropriatenessPredictorFromPeftInstructLM(AutoRegressivePredictor):
                 tmp_out = self.tokenizer.decode(output[len(prompt_input_ids[0]):], skip_special_tokens = True).strip()
                 if 'extract' in self.task:
                     tmp_out = ' '.join([sent.text for sent in self.nlp(tmp_out).sents][:2])
+                # split of unfinished sentences
+                if tmp_out.strip()[-1] not in ['.', '!', '?'] and '.' in tmp_out:
+                    tmp_out = ".".join(tmp_out.split('.')[:-1]) + '.'
                 decoded_outputs.append(tmp_out)
 
             return decoded_outputs

@@ -2,6 +2,7 @@ import pandas as pd
 import itertools
 import numpy as np
 import collections
+import krippendorff
 from icecream import ic
 from ast import literal_eval
 import scipy.stats
@@ -167,6 +168,37 @@ def analyze_neutralization():
     ic(total/(len(tuples[0]) * len(combinations)))
 
 
+def analyze_search():
+    df = pd.read_csv('../data/search_study_results.csv')
+    # only keep users 4,5,6,7,8
+    df = df[df['user_id'].isin([3,4,5,6,7])]
+    # check if each user has exactly 100 rows
+    ic(df.groupby('user_id').count())
+    # keep only user with exactly 100 rows
+    df = df.groupby('user_id').filter(lambda x: len(x) == 99)
+    # decompress result column
+    df['result'] = df['result'].apply(literal_eval)
+    df['selection'] = df['result'].apply(lambda x: x['radio-card'])
+    df['argumentA'] = df['post_id'].apply(lambda x: x.split('_')[1])
+    df['argumentB'] = df['post_id'].apply(lambda x: x.split('_')[2])
+
+    results = []
+    for i, row in df.iterrows():
+        if row['selection'] == '1':
+            results.append(row['argumentB'])
+        else:
+            results.append(row['argumentA'])
+
+    df['selection'] = results
+    ic(df['selection'].value_counts())
+
+    #ic.disable()
+    df['selection'] = df['selection'].apply(lambda x: 1 if x=='bart' else 2)
+    alpha = krippendorff.alpha(reliability_data=[df[df['user_id']==x].sort_values('post_id')['selection'].values for x in df.user_id.unique()], level_of_measurement='nominal')
+    ic(alpha)
+
+
 if __name__ == '__main__':
-    analyze_summarization()
-    analyze_neutralization()
+    #analyze_summarization()
+    #analyze_neutralization()
+    analyze_search()
