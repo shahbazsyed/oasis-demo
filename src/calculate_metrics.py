@@ -223,9 +223,10 @@ def evaluate_snippets_2():
     metric_calculator = MetricsCalculator()
     bart_metrics = metric_calculator.calculate_metrics(app_df['bart_snippet'].tolist(), app_df['source'].tolist())
     llama_metrics = metric_calculator.calculate_metrics(app_df['llama_snippet'].tolist(), app_df['source'].tolist())
+    snippet_comparison_metrics = metric_calculator.calculate_metrics(app_df['llama_snippet'].tolist(), app_df['bart_snippet'].tolist())
 
-    task_dict = {'task': ['both', 'both'],
-                 'approach': ['bart', 'llama']}
+    task_dict = {'task': ['both', 'both', 'both'],
+                 'approach': ['bart', 'llama', 'snippet_comparison']}
 
     for key, value in bart_metrics.items():
         if 'mean' in key:
@@ -233,6 +234,11 @@ def evaluate_snippets_2():
                 task_dict[key] = []
             task_dict[key].append(value)
     for key, value in llama_metrics.items():
+        if 'mean' in key:
+            if key not in task_dict:
+                task_dict[key] = []
+            task_dict[key].append(value)
+    for key, value in snippet_comparison_metrics.items():
         if 'mean' in key:
             if key not in task_dict:
                 task_dict[key] = []
